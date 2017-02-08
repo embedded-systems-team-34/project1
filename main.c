@@ -13,7 +13,7 @@
 #define MAX_LOWER_LIMIT (9950)
 #define DEFAULT_LOWER_LIMIT (950)
 
-unsigned int wasPost = 0;
+unsigned int postComplete = 0;
 unsigned int lower_limit = 0;
 uint16_t last_rising_edge_count = 0;
 uint16_t current_rising_edge_count = 0;
@@ -110,7 +110,7 @@ void processEvent(event_t event) {
             } // end state
             break;  // end EVENT_POST_COMPLETE
         
-        case (EVENT_RERUN_POST):
+        /*case (EVENT_RERUN_POST):
             switch (state) {
                 case(STATE_POST_FAIL_PROMPT):
                     state = STATE_POST;
@@ -120,9 +120,9 @@ void processEvent(event_t event) {
                     update_SM = 1;
                     state = STATE_FAULT;
             } // end state
-            break; // end EVENT_RERUN_POST
+            break; // end EVENT_RERUN_POST*/
         
-        case (EVENT_START_MEASUREMENTS):
+        /*case (EVENT_START_MEASUREMENTS):
             switch (state) {
                 case (STATE_PARSE_LIMITS) :
                     update_SM = 1;
@@ -133,9 +133,9 @@ void processEvent(event_t event) {
                     update_SM = 1;
                     state = STATE_FAULT;
             } // end state
-            break;  // end EVENT_START_MEASUREMENTS
+            break;  // end EVENT_START_MEASUREMENTS*/
             
-        case (EVENT_HIST_DISP_DONE):
+        /*case (EVENT_HIST_DISP_DONE):
             switch(state) {
                 case (STATE_DISPLAY_HIST):
                     update_SM = 1;
@@ -145,8 +145,8 @@ void processEvent(event_t event) {
                     update_SM = 1;
                     state = STATE_FAULT;
             } // end state
-            break; // end EVENT_HIST_DISP_DONE
-            
+            break; // end EVENT_HIST_DISP_DONE*/
+          
         default:
             update_SM = 1;
             state = STATE_FAULT;
@@ -154,6 +154,7 @@ void processEvent(event_t event) {
 }
 
 // A1 Interrupt Handler
+//Currently never actually used
 void EXTI1_IRQHandler(void) {
     // Center Button
     if ((EXTI->PR1 & 2) == 2) {
@@ -165,6 +166,7 @@ void EXTI1_IRQHandler(void) {
 	}
 }
 
+//Currently never actually used
 void TIM6_DAC_IRQHandler(void) {
 
     if((TIM6->SR & 1) != 0)    {                  // If update flag is set
@@ -269,6 +271,10 @@ int validLowerLimit(int limit) {
     }
 }
 
+void MaskRisingEdgeInterrupt(){
+    EXTI->IMR1 &= ~EXTI_IMR1_IM1;
+}
+
 int main(void){
 	int		n ;
     
@@ -309,55 +315,81 @@ int main(void){
             switch (state) {
                 case (STATE_POST):
                     update_SM = 0;
+
+                    //TODO: Place this register code into separate function
                     //EXTI->IMR1 |= EXTI_IMR1_IM0;
 					EXTI->IMR1 |= EXTI_IMR1_IM1;
                     // Enable Interrupts for timer 6
                     TIM6->DIER |= 1;  
                     TIM6->CR1 |= TIM_CR1_CEN;
 					
+                    //Toggle Lights
                     Red_LED_On();
                     Green_LED_Off();
+
+                    //Display text
                     n = sprintf((char *)buffer, "Running POST!\r\n");
                     USART_Write(USART2, buffer, n);
-                    wasPost = 1;                    
+
+                    //Post complete
+                    postComplete = 1;                    
                     break;
                     
                 case (STATE_POST_FAIL_PROMPT):
 					
+                    //TODO: Place this register code into separate function
 					TIM6->DIER &= ~1;  
 					TIM6->CR1 &= ~TIM_CR1_CEN;
 				
 					// Mask off rising edge interrupts
-                    //EXTI->IMR1 &= ~EXTI_IMR1_IM0;
-					EXTI->IMR1 &= ~EXTI_IMR1_IM1;
+					//EXTI->IMR1 &= ~EXTI_IMR1_IM1;
+                    MaskRisingEdgeInterrupt();
+
+                    //Toggle Lights
                     Red_LED_Off();
                     Green_LED_Off();
+
+                    //Display failure text, ask for re-run
                     n = sprintf((char *)buffer, "POST Failed\r\n");
                     n += sprintf((char *)buffer+n, "Press ENTER to re-run POST...\r\n");
-                    USART_Write(USART2, buffer, n);	
-                    while (USART_Read(USART2) != 0x0d);
-                    processEvent(EVENT_RERUN_POST);
+                    USART_Write(USART2, buffer, n);
+
+
+                    while (USART_Read(USART2) != 0x0d); //proper syntax?
+                    //Replacing EVENT_RERUN_POST
+                    state = STATE_POST;
+                    update_SM = 1;
+
                     break;
                     
                 case (STATE_PARSE_LIMITS):
-				
+                    //TODO: Place this register code into separate function
 					TIM6->DIER &= ~1;  
 				
-                    // Mask off rising edge interrupt
-                    //EXTI->IMR1 &= ~EXTI_IMR1_IM0;
-					EXTI->IMR1 &= ~EXTI_IMR1_IM1;
+                    // Mask off rising edge interrupts
+					//EXTI->IMR1 &= ~EXTI_IMR1_IM1;
+                    MaskRisingEdgeInterrupt();
+
+                    //Toggle Lights
                     Red_LED_Off();
                     Green_LED_On();
-                    if (wasPost == 1) {
+
+                    //TODO: Move this code chunk into separate state
+                    //Either a) this runs every time or b) We redo post everytime even though we dont need to
+                    if (postComplete == 1) {
                         n = sprintf((char *)buffer, "Post PASSED!\r\n");
                         USART_Write(USART2, buffer, n);	
                     }
+
+                    //Display number of edges
                     n = sprintf((char *)buffer, "%u edges detected.\r\n", rising_edge_count);
-                    // remove?
-					rising_edge_count = 0;
                     USART_Write(USART2, buffer, n);	
-					#warning USER ENTRY IS CURRENTLY BYPASSES AND BROKEN FIX!!!!!
-					lower_limit = 0;
+					
+                    #warning USER ENTRY IS CURRENTLY BYPASSES AND BROKEN FIX!!!!!
+					rising_edge_count = 0;
+
+                    //Find lower limit
+                    lower_limit = 0;
                     while(validLowerLimit(lower_limit) == 0) {
                         n = sprintf((char *)buffer, "Enter lower limit in range of 50-9950 microseconds and press ENTER: ");
                         USART_Write(USART2, buffer, n);	
@@ -365,28 +397,51 @@ int main(void){
                     }
                     n = sprintf((char *)buffer, "Starting with lower limit %d\r\n", lower_limit);
                     USART_Write(USART2, buffer, n);	
-                    processEvent(EVENT_START_MEASUREMENTS);
+
+                    //TODO: Find upper limit
+
+                    //Replacing EVENT_START_MEASUREMENTS
+                    update_SM = 1;
+                    rising_edge_count = 0;
+                    state = STATE_PERFORM_MEASUREMENTS;
+
                     break;
                     
                 case (STATE_PERFORM_MEASUREMENTS):
+                    //Toggle Lights
                     Red_LED_Off();
                     Green_LED_Off();
+                    
                     clearHist();
+
                     n = sprintf((char *)buffer, "1000 Measurements in progress...\r\n");
                     USART_Write(USART2, buffer, n);	
+
+
                     startFastTimer();
+
+                    //TODO: Place this register code into separate function
 					TIM6->CR1 |= TIM_CR1_CEN;
                     //EXTI->IMR1 |= EXTI_IMR1_IM0;
 					EXTI->IMR1 |= EXTI_IMR1_IM1;
+
                     update_SM = 0;
                     break;
                     
                 case (STATE_DISPLAY_HIST):
+
+                    //TODO: Place this register code into separate function
                     //EXTI->IMR1 &= EXTI_IMR1_IM0;
 					EXTI->IMR1 |= EXTI_IMR1_IM1;
+
                     printHist();
-                    processEvent(EVENT_HIST_DISP_DONE);
-                    wasPost = 0;
+                    
+                    //Replacing EVENT_HIST_DISP_DONE
+                    state = STATE_PARSE_LIMITS;
+                    update_SM = 1;
+
+                    //Possibly causing post to needlessly repeat
+                    postComplete = 0;
                     break;
                     
                 case (STATE_FAULT):    
@@ -401,4 +456,3 @@ int main(void){
         }
     }
 }
-
