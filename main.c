@@ -5,6 +5,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <math.h>
 
 #define NUM_BUCKETS (101)
 #define NUM_MEASUREMENTS (1000)
@@ -152,18 +153,6 @@ void processEvent(event_t event) {
     }
 }
 
-// A0 Interrupt Handler
-//void EXTI0_IRQHandler(void) {
-//    // Center Button
-//    if ((EXTI->PR1 & 1) == 1) {
-//        EXTI->EMR1 = 0x1;
-//        processEvent(EVENT_RISING_EDGE_DETECT);
-//        Green_LED_Toggle();
-//        EXTI->PR1 = 1;    
-//        EXTI->EMR1 = 0x0;
-//	}
-//}
-
 // A1 Interrupt Handler
 void EXTI1_IRQHandler(void) {
     // Center Button
@@ -229,7 +218,7 @@ void printHist() {
     for (i = 0; i < NUM_BUCKETS; i++) {
         count = pulse_time_hist[i];
         if (count != 0) {
-            n = sprintf((char *)buffer, "Index: %u Count: %u\r\n", i,count);
+            n = sprintf((char *)buffer, "Pulse Duration: %uuS : Count: %u\r\n", lower_limit + i,count);
             USART_Write(USART2, buffer, n);
         }
     }
@@ -237,13 +226,15 @@ void printHist() {
 
 int parseLowerLimit() {
     uint8_t rx_arr[10];
-    unsigned int value;
+    unsigned int value = 0;
     unsigned int length = 0;
     int n;
-    
+	unsigned int i;
+	
     while (1) {
         rx_arr[length] = USART_Read(USART2);
         if ((rx_arr[length]) == 0x0d) {
+			// User hits ENTER without entering any characters so select default Lower Limit
             if (length == 0) {
                 // Write a new line after echoing user input
                 n = sprintf((char *)buffer, "\r\n");
@@ -252,12 +243,17 @@ int parseLowerLimit() {
             }
             break;
         }
-        // Echo back what the user types
+        // Echo the received character back to the display
         n = sprintf((char *)buffer, "%c",rx_arr[length]);
         USART_Write(USART2, buffer, n);
+		// Ascii code for 0-9 is 30 for 0 -> 39 for 9, hence the bottom nibble contains the int 
+		// Therefore mask with 0xF to capture just the bottom nibble
+		rx_arr[length] &= 0xF;
         length += 1;
     }
-	value = atoi(rx_arr);
+	for (i = 0; i < length; i++) {
+		value += rx_arr[i] * pow(10,length-i-1);
+	}
     // Write a new line after echoing user input
     n = sprintf((char *)buffer, "\r\n");
     USART_Write(USART2, buffer, n);
@@ -266,9 +262,6 @@ int parseLowerLimit() {
 }
 
 int validLowerLimit(int limit) {
-	int n;
-	n = sprintf((char *)buffer, "limit: %u\r\n",limit);
-    USART_Write(USART2, buffer, n);
     if ((limit >= MIN_LOWER_LIMIT) && (limit <= MAX_LOWER_LIMIT)) {
         return 1;
     } else {
@@ -364,7 +357,7 @@ int main(void){
 					rising_edge_count = 0;
                     USART_Write(USART2, buffer, n);	
 					#warning USER ENTRY IS CURRENTLY BYPASSES AND BROKEN FIX!!!!!
-					lower_limit = 950;
+					lower_limit = 0;
                     while(validLowerLimit(lower_limit) == 0) {
                         n = sprintf((char *)buffer, "Enter lower limit in range of 50-9950 microseconds and press ENTER: ");
                         USART_Write(USART2, buffer, n);	
