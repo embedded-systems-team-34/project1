@@ -27,10 +27,10 @@ uint16_t pulse_time_hist[NUM_BUCKETS] = {1};
 
 typedef enum {
     STATE_POST,
-	STATE_POST_FAIL_PROMPT,
-	STATE_PARSE_LIMITS,
-	STATE_PERFORM_MEASUREMENTS,
-	STATE_DISPLAY_HIST,
+    STATE_POST_FAIL_PROMPT,
+    STATE_PARSE_LIMITS,
+    STATE_PERFORM_MEASUREMENTS,
+    STATE_DISPLAY_HIST,
     STATE_FAULT,
 } state_t;
 
@@ -46,10 +46,10 @@ typedef enum {
 state_t state = STATE_POST;
 
 void processEvent(event_t event) {
-	
-	int index = 0;
-	int n;
-	
+    
+    int index = 0;
+    int n;
+    
     switch(event) {
         // 100 ms post time is over
         case (EVENT_POST_COMPLETE):
@@ -66,7 +66,7 @@ void processEvent(event_t event) {
                     update_SM = 1;
                     state = STATE_FAULT;
             } // end state
-            break;  // end EVENT_POST_COMPLETE
+            break;    // end EVENT_POST_COMPLETE
         
         case (EVENT_RISING_EDGE_DETECT):
             switch (state) {
@@ -74,41 +74,45 @@ void processEvent(event_t event) {
                     rising_edge_count += 1;
                     break;
                 case (STATE_PERFORM_MEASUREMENTS):
-					current_rising_edge_count = TIM6->CNT;
-					// If not first time, then find delta time
-					if (rising_edge_count != 0) {
-						// If overflow occurred
-						if (current_rising_edge_count < last_rising_edge_count) {
-							// Overflow occurred, delta time = (2^16 - last_rising_edge_count) + current_rising_edge_count
-							delta_time = (0xFFFF - last_rising_edge_count) + current_rising_edge_count; 
-						// No overflow occurred, calculate delta time normally
-						} else {
-							delta_time = current_rising_edge_count - last_rising_edge_count;
-						}
-						
-						// Calculate index into histogram array
-						// If greater than or less than bounds then truncate to the limit
-						index = delta_time - lower_limit;
-						if (index < 0) {
-							index = 0;
-						} else if (index > 100) {
-							index = 100;
-						}
-						pulse_time_hist[index] += 1;
-					} 
-					// If its the last rising edge then kick state machine to display histogram
-					if (rising_edge_count == (NUM_MEASUREMENTS)) {
+                    current_rising_edge_count = TIM6->CNT;
+                    
+                    // If not first time, then find delta time
+                    if (rising_edge_count != 0) {
+                    
+                        // If overflow occurred
+                        if (current_rising_edge_count < last_rising_edge_count) {
+                        
+                            // Overflow occurred, delta time = (2^16 - last_rising_edge_count) + current_rising_edge_count
+                            delta_time = (0xFFFF - last_rising_edge_count) + current_rising_edge_count; 
+                            
+                        // No overflow occurred, calculate delta time normally
+                        } else {
+                            delta_time = current_rising_edge_count - last_rising_edge_count;
+                        }
+                        
+                        // Calculate index into histogram array
+                        // If greater than or less than bounds then truncate to the limit
+                        index = delta_time - lower_limit;
+                        if (index < 0) {
+                            index = 0;
+                        } else if (index > 100) {
+                            index = 100;
+                        }
+                        pulse_time_hist[index] += 1;
+                    } 
+                    // If its the last rising edge then kick state machine to display histogram
+                    if (rising_edge_count == (NUM_MEASUREMENTS)) {
                         state = STATE_DISPLAY_HIST;
                         update_SM = 1;
-					// Still have more edges to measure
+                    // Still have more edges to measure
                     } else {
-						rising_edge_count += 1;
-						last_rising_edge_count = current_rising_edge_count;
-					}
-					
+                        rising_edge_count += 1;
+                        last_rising_edge_count = current_rising_edge_count;
+                    }
+                    
                     break;
             } // end state
-            break;  // end EVENT_POST_COMPLETE
+            break;    // end EVENT_POST_COMPLETE
         
         /*case (EVENT_RERUN_POST):
             switch (state) {
@@ -133,7 +137,7 @@ void processEvent(event_t event) {
                     update_SM = 1;
                     state = STATE_FAULT;
             } // end state
-            break;  // end EVENT_START_MEASUREMENTS*/
+            break;    // end EVENT_START_MEASUREMENTS*/
             
         /*case (EVENT_HIST_DISP_DONE):
             switch(state) {
@@ -161,16 +165,16 @@ void EXTI1_IRQHandler(void) {
         EXTI->EMR1 = 0x2;
         processEvent(EVENT_RISING_EDGE_DETECT);
         Green_LED_Toggle();
-        EXTI->PR1 = 2;    
+        EXTI->PR1 = 2;      
         EXTI->EMR1 = 0x0;
-	}
+    }
 }
 
 //Currently never actually used
 void TIM6_DAC_IRQHandler(void) {
 
-    if((TIM6->SR & 1) != 0)    {                  // If update flag is set
-		TIM6->DIER &= ~1;  
+    if((TIM6->SR & 1) != 0)       {                  // If update flag is set
+        TIM6->DIER &= ~1;  
         //TIM6->CR1 &= ~TIM_CR1_CEN;
         processEvent(EVENT_POST_COMPLETE);
         TIM6->SR &= ~TIM_SR_UIF;                            // Interrupt has been handled
@@ -181,11 +185,11 @@ void timer_Init() {
     // Enable the clock for timer 6
     RCC->APB1ENR1 |= RCC_APB1ENR1_TIM6EN;
     // Configure timer to count at 2 KHz -> 500 us
-    // System clock = 80 MHz / (4000) =  20 kHz
+    // System clock = 80 MHz / (4000) =     20 kHz
     TIM6->PSC = 39999;
-	// Set Overflow to 200 * 500 us = 100 ms 
+    // Set Overflow to 200 * 500 us = 100 ms 
     TIM6->ARR = 200;
-	// Trigger a write of registers
+    // Trigger a write of registers
     TIM6->CR1 |= 4; // Prevent UIF from firing on an EGR write
     TIM6->EGR |= 1; 
     TIM6->DIER |= 1;
@@ -198,7 +202,7 @@ void startFastTimer() {
     // Configure timer to count at 1 MHz -> 1 us
     // System clock = 80 MHz / (80) =  1 MHz
     TIM6->PSC = 79;
-	// Set Overflow maximum value to 65535 * 1 us = 65.535 ms 
+    // Set Overflow maximum value to 65535 * 1 us = 65.535 ms 
     TIM6->ARR = 0xffff;
     TIM6->EGR |= 1; 
 }
@@ -217,8 +221,10 @@ void printHist() {
     
     n = sprintf((char *)buffer, "Displaying Histogram: \r\n");
     USART_Write(USART2, buffer, n);
+    
     for (i = 0; i < NUM_BUCKETS; i++) {
         count = pulse_time_hist[i];
+        
         if (count != 0) {
             n = sprintf((char *)buffer, "Pulse Duration: %uuS : Count: %u\r\n", lower_limit + i,count);
             USART_Write(USART2, buffer, n);
@@ -231,12 +237,12 @@ int parseLowerLimit() {
     unsigned int value = 0;
     unsigned int length = 0;
     int n;
-	unsigned int i;
-	
+    unsigned int i;
+    
     while (1) {
         rx_arr[length] = USART_Read(USART2);
         if ((rx_arr[length]) == 0x0d) {
-			// User hits ENTER without entering any characters so select default Lower Limit
+            // User hits ENTER without entering any characters so select default Lower Limit
             if (length == 0) {
                 // Write a new line after echoing user input
                 n = sprintf((char *)buffer, "\r\n");
@@ -248,18 +254,18 @@ int parseLowerLimit() {
         // Echo the received character back to the display
         n = sprintf((char *)buffer, "%c",rx_arr[length]);
         USART_Write(USART2, buffer, n);
-		// Ascii code for 0-9 is 30 for 0 -> 39 for 9, hence the bottom nibble contains the int 
-		// Therefore mask with 0xF to capture just the bottom nibble
-		rx_arr[length] &= 0xF;
+        // Ascii code for 0-9 is 30 for 0 -> 39 for 9, hence the bottom nibble contains the int 
+        // Therefore mask with 0xF to capture just the bottom nibble
+        rx_arr[length] &= 0xF;
         length += 1;
     }
-	for (i = 0; i < length; i++) {
-		value += rx_arr[i] * pow(10,length-i-1);
-	}
+    for (i = 0; i < length; i++) {
+        value += rx_arr[i] * pow(10,length-i-1);
+    }
     // Write a new line after echoing user input
     n = sprintf((char *)buffer, "\r\n");
     USART_Write(USART2, buffer, n);
-	
+    
     return value;
 }
 
@@ -276,41 +282,41 @@ void MaskRisingEdgeInterrupt(){
 }
 
 int main(void){
-	int		n ;
+    int        n ;
     
-	System_Clock_Init();
+    System_Clock_Init();
     
     // Enable clk to PortA
     #warning MOVE oneoff statements into an init function
-	RCC->AHB2ENR |= RCC_AHB2ENR_GPIOAEN;
+    RCC->AHB2ENR |= RCC_AHB2ENR_GPIOAEN;
     
-	LED_Init();
-	UART2_Init();
+    LED_Init();
+    UART2_Init();
     timer_Init();
     
     // Enable interrupt vectors
-	NVIC_EnableIRQ(TIM6_DAC_IRQn);
-	//NVIC_EnableIRQ(EXTI0_IRQn);
-	NVIC_EnableIRQ(EXTI1_IRQn);
-	
-	// Configure PA0, PA1, PA2, PA3, PA5 as pull-down
-	GPIOA->PUPDR &= ~0xCFF;
-	GPIOA->PUPDR |= 0x8AA;
-	
-	// Set interrupt to be rising edge sensitive
-	//EXTI->RTSR1 |= EXTI_RTSR1_RT0;
-	EXTI->RTSR1 |= EXTI_RTSR1_RT1;
-	
-	
-		// Set PA0, PA1, PA2, PA3, and PA5 as input
-	GPIOA->MODER &= ~0xCFF;
+    NVIC_EnableIRQ(TIM6_DAC_IRQn);
+    //NVIC_EnableIRQ(EXTI0_IRQn);
+    NVIC_EnableIRQ(EXTI1_IRQn);
+    
+    // Configure PA0, PA1, PA2, PA3, PA5 as pull-down
+    GPIOA->PUPDR &= ~0xCFF;
+    GPIOA->PUPDR |= 0x8AA;
+    
+    // Set interrupt to be rising edge sensitive
+    //EXTI->RTSR1 |= EXTI_RTSR1_RT0;
+    EXTI->RTSR1 |= EXTI_RTSR1_RT1;
+    
+    
+        // Set PA0, PA1, PA2, PA3, and PA5 as input
+    GPIOA->MODER &= ~0xCFF;
 
     // Kick of a state machine update event
     rising_edge_count = 0;
-	update_SM = 1;
-	state = STATE_POST;
-	
-	while (1){
+    update_SM = 1;
+    state = STATE_POST;
+    
+    while (1){
         if (update_SM == 1) { 
             switch (state) {
                 case (STATE_POST):
@@ -318,11 +324,11 @@ int main(void){
 
                     //TODO: Place this register code into separate function
                     //EXTI->IMR1 |= EXTI_IMR1_IM0;
-					EXTI->IMR1 |= EXTI_IMR1_IM1;
+                    EXTI->IMR1 |= EXTI_IMR1_IM1;
                     // Enable Interrupts for timer 6
                     TIM6->DIER |= 1;  
                     TIM6->CR1 |= TIM_CR1_CEN;
-					
+                    
                     //Toggle Lights
                     Red_LED_On();
                     Green_LED_Off();
@@ -332,17 +338,17 @@ int main(void){
                     USART_Write(USART2, buffer, n);
 
                     //Post complete
-                    postComplete = 1;                    
+                    postComplete = 1;                     
                     break;
                     
                 case (STATE_POST_FAIL_PROMPT):
-					
+                    
                     //TODO: Place this register code into separate function
-					TIM6->DIER &= ~1;  
-					TIM6->CR1 &= ~TIM_CR1_CEN;
-				
-					// Mask off rising edge interrupts
-					//EXTI->IMR1 &= ~EXTI_IMR1_IM1;
+                    TIM6->DIER &= ~1;  
+                    TIM6->CR1 &= ~TIM_CR1_CEN;
+                
+                    // Mask off rising edge interrupts
+                    //EXTI->IMR1 &= ~EXTI_IMR1_IM1;
                     MaskRisingEdgeInterrupt();
 
                     //Toggle Lights
@@ -364,10 +370,10 @@ int main(void){
                     
                 case (STATE_PARSE_LIMITS):
                     //TODO: Place this register code into separate function
-					TIM6->DIER &= ~1;  
-				
+                    TIM6->DIER &= ~1;  
+                
                     // Mask off rising edge interrupts
-					//EXTI->IMR1 &= ~EXTI_IMR1_IM1;
+                    //EXTI->IMR1 &= ~EXTI_IMR1_IM1;
                     MaskRisingEdgeInterrupt();
 
                     //Toggle Lights
@@ -378,25 +384,25 @@ int main(void){
                     //Either a) this runs every time or b) We redo post everytime even though we dont need to
                     if (postComplete == 1) {
                         n = sprintf((char *)buffer, "Post PASSED!\r\n");
-                        USART_Write(USART2, buffer, n);	
+                        USART_Write(USART2, buffer, n);    
                     }
 
                     //Display number of edges
                     n = sprintf((char *)buffer, "%u edges detected.\r\n", rising_edge_count);
-                    USART_Write(USART2, buffer, n);	
-					
+                    USART_Write(USART2, buffer, n);    
+                    
                     #warning USER ENTRY IS CURRENTLY BYPASSES AND BROKEN FIX!!!!!
-					rising_edge_count = 0;
+                    rising_edge_count = 0;
 
                     //Find lower limit
                     lower_limit = 0;
                     while(validLowerLimit(lower_limit) == 0) {
                         n = sprintf((char *)buffer, "Enter lower limit in range of 50-9950 microseconds and press ENTER: ");
-                        USART_Write(USART2, buffer, n);	
+                        USART_Write(USART2, buffer, n);    
                         lower_limit = parseLowerLimit();
                     }
                     n = sprintf((char *)buffer, "Starting with lower limit %d\r\n", lower_limit);
-                    USART_Write(USART2, buffer, n);	
+                    USART_Write(USART2, buffer, n);    
 
                     //TODO: Find upper limit
 
@@ -415,15 +421,15 @@ int main(void){
                     clearHist();
 
                     n = sprintf((char *)buffer, "1000 Measurements in progress...\r\n");
-                    USART_Write(USART2, buffer, n);	
+                    USART_Write(USART2, buffer, n);    
 
 
                     startFastTimer();
 
                     //TODO: Place this register code into separate function
-					TIM6->CR1 |= TIM_CR1_CEN;
+                    TIM6->CR1 |= TIM_CR1_CEN;
                     //EXTI->IMR1 |= EXTI_IMR1_IM0;
-					EXTI->IMR1 |= EXTI_IMR1_IM1;
+                    EXTI->IMR1 |= EXTI_IMR1_IM1;
 
                     update_SM = 0;
                     break;
@@ -432,7 +438,7 @@ int main(void){
 
                     //TODO: Place this register code into separate function
                     //EXTI->IMR1 &= EXTI_IMR1_IM0;
-					EXTI->IMR1 |= EXTI_IMR1_IM1;
+                    EXTI->IMR1 |= EXTI_IMR1_IM1;
 
                     printHist();
                     
@@ -444,12 +450,12 @@ int main(void){
                     postComplete = 0;
                     break;
                     
-                case (STATE_FAULT):    
+                case (STATE_FAULT):       
                 default:
                     Red_LED_On();
                     Green_LED_On();
                     n = sprintf((char *)buffer, "FAULT STATE\r\n");
-                    USART_Write(USART2, buffer, n);	
+                    USART_Write(USART2, buffer, n);    
                     update_SM = 0;
                 
             } // end case
