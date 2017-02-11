@@ -2,6 +2,7 @@
 #include "SysClock.h"
 #include "LED.h"
 #include "UART.h"
+#include "Histogram.h"
 
 #include <string.h>
 #include <stdio.h>
@@ -91,14 +92,9 @@ void processEvent(event_t event) {
                         }
                         
                         // Calculate index into histogram array
-                        // If greater than or less than bounds then truncate to the limit
                         index = delta_time - lower_limit;
-                        if (index < 0) {
-                            index = 0;
-                        } else if (index > 100) {
-                            index = 100;
-                        }
-                        pulse_time_hist[index] += 1;
+                        AddValueToHist(pulse_time_hist, index);
+                        
                     } 
                     // If its the last rising edge then kick state machine to display histogram
                     if (rising_edge_count == (NUM_MEASUREMENTS)) {
@@ -205,31 +201,6 @@ void startFastTimer() {
     // Set Overflow maximum value to 65535 * 1 us = 65.535 ms 
     TIM6->ARR = 0xffff;
     TIM6->EGR |= 1; 
-}
-
-void clearHist() {
-    unsigned int i;
-    for (i = 0; i < NUM_BUCKETS; i++) {
-        pulse_time_hist[i] = 0;
-    }
-}
-
-void printHist() {
-    unsigned int i;
-    int n;
-    unsigned int count = 0;
-    
-    n = sprintf((char *)buffer, "Displaying Histogram: \r\n");
-    USART_Write(USART2, buffer, n);
-    
-    for (i = 0; i < NUM_BUCKETS; i++) {
-        count = pulse_time_hist[i];
-        
-        if (count != 0) {
-            n = sprintf((char *)buffer, "Pulse Duration: %uuS : Count: %u\r\n", lower_limit + i,count);
-            USART_Write(USART2, buffer, n);
-        }
-    }
 }
 
 int parseLowerLimit() {
@@ -418,7 +389,7 @@ int main(void){
                     Red_LED_Off();
                     Green_LED_Off();
                     
-                    clearHist();
+                    ClearHist(pulse_time_hist);
 
                     n = sprintf((char *)buffer, "1000 Measurements in progress...\r\n");
                     USART_Write(USART2, buffer, n);    
@@ -440,7 +411,7 @@ int main(void){
                     //EXTI->IMR1 &= EXTI_IMR1_IM0;
                     EXTI->IMR1 |= EXTI_IMR1_IM1;
 
-                    printHist();
+                    PrintHist(pulse_time_hist, buffer, lower_limit);
                     
                     //Replacing EVENT_HIST_DISP_DONE
                     state = STATE_PARSE_LIMITS;
