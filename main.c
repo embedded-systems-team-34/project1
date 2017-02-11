@@ -8,20 +8,35 @@
 
 char RxComByte = 0;
 uint8_t buffer[BufferSize];
-char str[] = "Give Red LED control input (Y = On, N = off):\r\n";
+uint16_t current_rising_edge_count = 0;
+uint16_t last_rising_edge_count = 0;
+uint16_t delta_time = 0;
+
 
 void TIM2_IRQHandler(void) {
     
+    uint16_t which_interrupt = TIM2->SR;
+    
     // Check for overflow interrupt
-    if ((TIM2->SR & 1 ) == 1) {
+    if ((which_interrupt & 1 ) == 1) {
         Red_LED_Toggle();
         TIM2->SR &= ~1; // Clear overflow interrupt
     }
     
     // Input channel 1 capture interrupt
-    if ((TIM2->SR & 2) == 2) {
-        uint16_t count = TIM2->CCR1;
+    if ((which_interrupt & 2) == 2) {
+        current_rising_edge_count = TIM2->CCR1;
+        
+        if (current_rising_edge_count < last_rising_edge_count) {
+			// Overflow occurred, delta time = (2^16 - last_rising_edge_count) + current_rising_edge_count
+			delta_time = (0xFFFF - last_rising_edge_count) + current_rising_edge_count; 
+		// No overflow occurred, calculate delta time normally
+		} else {
+			delta_time = current_rising_edge_count - last_rising_edge_count;
+		}
+        last_rising_edge_count = current_rising_edge_count;
         Green_LED_Toggle();
+		    
     }
 }
 
@@ -32,9 +47,10 @@ int main(void){
 	int		i ;
 	float b;
 	
+
 	System_Clock_Init(); // Switch System Clock = 80 MHz
 	LED_Init();
-	//UART2_Init();
+	UART2_Init();
     
     // Configure GPIO Pin
     // Enable the clock to GPIO Ports A	
@@ -60,28 +76,36 @@ int main(void){
     // Configure CC1 as an input and map IC1 to TI2
     TIM2->CCMR1 &= ~TIM_CCMR1_CC1S;
     TIM2->CCMR1 |= 0x1; 
+    TIM2->EGR |= 1;
     // Select the edge of the capture
     // Enable Capture from the counter
     TIM2->CCER &= ~0xa; 
     TIM2->CCER |= TIM_CCER_CC1E;
     
     // Enable the Timer2 capture interrupt for CC2IE
-    TIM2->DIER |= 0x2;//TIM_CCER_CC1E;
+    
     // Enable interrupt for a overflow event
-    TIM2->DIER |= 1;
-    TIM2->ARR = 1000;
-    TIM2->EGR |= 1;
+    //TIM2->DIER |= 1;
+    //TIM2->ARR = 1000;
+    //TIM2->EGR |= 1;
     
     // Enable the Timer2 counter
-    TIM2->CR1 |= TIM_CR1_CEN;   // Enable CEN bit
+   
     //TIM2->EGR = 2;
     // Enable TIM2 Interrupt
     NVIC_EnableIRQ(TIM2_IRQn);    
+    
+    TIM2->DIER = 0x2;//TIM_CCER_CC1E;
+    TIM2->CR1 |= TIM_CR1_CEN;   // Enable CEN bit
 	
+    
+		
 	while (1){
-     //if (TIM2->CCR1 != 0) {
-	//		 Green_LED_On();
-	//	 }
+        
+        for (a = 0; a < 1000000; a++) {};
+        
+        n = sprintf((char *)buffer, "time: %u\r\n", delta_time);
+        USART_Write(USART2, buffer, n);
         
 	}
 }
