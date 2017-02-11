@@ -11,8 +11,18 @@ uint8_t buffer[BufferSize];
 char str[] = "Give Red LED control input (Y = On, N = off):\r\n";
 
 void TIM2_IRQHandler(void) {
-    static unsigned int x = 0;
-      Green_LED_Toggle();
+    
+    // Check for overflow interrupt
+    if ((TIM2->SR & 1 ) == 1) {
+        Red_LED_Toggle();
+        TIM2->SR &= ~1; // Clear overflow interrupt
+    }
+    
+    // Input channel 1 capture interrupt
+    if ((TIM2->SR & 2) == 2) {
+        uint16_t count = TIM2->CCR1;
+        Green_LED_Toggle();
+    }
 }
 
 int main(void){
@@ -39,6 +49,10 @@ int main(void){
 	
     // Enable clock of timer 2
     RCC->APB1ENR1 |= RCC_APB1ENR1_TIM2EN;
+    
+    // Enable interrupt for updating timer registers
+    //TIM2->CR1 |= 2;     // Set UDIS bit
+    
     // Set Prescaler
     // 80 MHz / 80 = 1 MHz -> 1 us
     TIM2->PSC = 79;
@@ -52,7 +66,11 @@ int main(void){
     TIM2->CCER |= TIM_CCER_CC1E;
     
     // Enable the Timer2 capture interrupt for CC2IE
-    TIM2->DIER |= 0x2;//TIM_CCER_CC1E; 
+    TIM2->DIER |= 0x2;//TIM_CCER_CC1E;
+    // Enable interrupt for a overflow event
+    TIM2->DIER |= 1;
+    TIM2->ARR = 1000;
+    TIM2->EGR |= 1;
     
     // Enable the Timer2 counter
     TIM2->CR1 |= TIM_CR1_CEN;   // Enable CEN bit
@@ -62,9 +80,8 @@ int main(void){
 	
 	while (1){
      //if (TIM2->CCR1 != 0) {
-		//	 Green_LED_On();
-		 //}
+	//		 Green_LED_On();
+	//	 }
         
 	}
 }
-
