@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <math.h>
 
-#define debug (0)
+#define debug (1)
 #define NUM_BUCKETS (101)
 #define NUM_MEASUREMENTS (1000)
 #define MIN_LOWER_LIMIT (50)
@@ -193,7 +193,9 @@ void printHist() {
     int n;
     unsigned int count = 0;
     
-    n = sprintf((char *)buffer, "Displaying Histogram: \r\n");
+	  n = sprintf((char *)buffer, "**********************************\r\n");
+    n += sprintf((char *)buffer+n, "Displaying Histogram: \r\n");
+	  n += sprintf((char *)buffer+n, "**********************************\r\n");
     USART_Write(USART2, buffer, n);
     for (i = 0; i < NUM_BUCKETS; i++) {
         count = pulse_time_hist[i];
@@ -202,6 +204,8 @@ void printHist() {
             USART_Write(USART2, buffer, n);
         }
     }
+		n = sprintf((char *)buffer, "**********************************\r\n");
+    USART_Write(USART2, buffer, n);
 }
 
 int parseLowerLimit() {
@@ -294,7 +298,7 @@ int main(void){
     TIM2->CCMR1 &= ~TIM_CCMR1_CC1S;
     TIM2->CCMR1 |= TIM_CCMR1_CC1S_0; 
     #warning THIS ISNT NEEDED??? DONE IN STATE POST
-    TIM2->EGR |= TIM_EGR_UG; // Re-initalize the counter and generate an update of the registers
+    //TIM2->EGR |= TIM_EGR_UG; // Re-initalize the counter and generate an update of the registers
     // Select rising edge for capture
     TIM2->CCER &= ~(TIM_CCER_CC1NP | TIM_CCER_CC1P); 
     
@@ -324,7 +328,7 @@ int main(void){
                     // Set Prescaler To count at 20 KHz -> 80 MHz / 4000 = 20 kHz -> 50 us
 					TIM2->PSC = 3999;
                     // Set Auto Reload Register to 2000 to get an overflow interrupt to end POST after 100 ms -> 2000 * 50us = 100 ms
-                    TIM2->ARR = 20000;
+                    TIM2->ARR = 2000;
                     TIM2->EGR |= TIM_EGR_UG;
                     // Unmask TIM2 Interrupts
                     // UIF - Overflow occurs -> POST over
@@ -374,7 +378,7 @@ int main(void){
                     USART_Write(USART2, buffer, n);
                     
                     // User has selected yes to change the limit
-                    if ((rxbyte == 'Y') || (rxbyte == 'y')) {
+                    if ((rxbyte == 'N') || (rxbyte == 'n')) {
                         lower_limit = 0;    // set limit to invalid to force user to enter 
                         while(validLowerLimit(lower_limit) == 0) {
                             n = sprintf((char *)buffer, "Enter lower limit in range of 50-9950 microseconds and press ENTER: ");
@@ -402,12 +406,13 @@ int main(void){
                     USART_Write(USART2, buffer, n);	
                     update_SM = 0;
                     // Set UDIS bit to disable UIF flag
-					TIM2->CR1 |= TIM_CR1_UDIS;
+					//TIM2->CR1 |= TIM_CR1_UDIS;
                     // Set the Auto Reload Register back to full scale to avoid overflows
 					TIM2->ARR = 0xffff;
                     // Set Prescaler to count at 1 MHz -> 80 MHz / 80 = 1 MHz -> 1us
 					TIM2->PSC = 79;
 					TIM2->EGR |= TIM_EGR_UG;
+					TIM2->CR1 |= TIM_CR1_UDIS;
                     // Enable TIM2_CH1 capture interrupt
 					TIM2->DIER = TIM_DIER_CC1IE;
                     // Enable capture on channel 1
