@@ -7,13 +7,13 @@
 #include <stdio.h>
 #include <math.h>
 
+#define debug (0)
 #define NUM_BUCKETS (101)
 #define NUM_MEASUREMENTS (1000)
 #define MIN_LOWER_LIMIT (50)
 #define MAX_LOWER_LIMIT (9950)
 #define DEFAULT_LOWER_LIMIT (950)
 
-unsigned int wasPost = 0;
 unsigned int lower_limit = 0;
 uint16_t last_rising_edge_count = 0;
 uint16_t current_rising_edge_count = 0;
@@ -48,7 +48,6 @@ state_t state = STATE_POST;
 void processEvent(event_t event) {
 	
 	int index = 0;
-	int n;
 	
     switch(event) {
         // 100 ms post time is over
@@ -106,6 +105,9 @@ void processEvent(event_t event) {
 					}
 					
                     break;
+                default:
+                    update_SM = 1;
+                    state = STATE_FAULT;
             } // end state
             break;  // end EVENT_POST_COMPLETE
         
@@ -124,6 +126,7 @@ void processEvent(event_t event) {
         case (EVENT_START_MEASUREMENTS):
             switch (state) {
                 case (STATE_PARSE_LIMITS) :
+                    rising_edge_count = 0;
                     update_SM = 1;
                     rising_edge_count = 0;
                     state = STATE_PERFORM_MEASUREMENTS;
@@ -153,31 +156,27 @@ void processEvent(event_t event) {
 }
 
 void TIM2_IRQHandler(void) {
-    int n;
     uint16_t which_interrupt = TIM2->SR;
-    which_interrupt &= 3;
-	  if (which_interrupt == 0x202) {
-			Green_LED_On();Red_LED_On();}
+    which_interrupt &= 3;   // Only look at the channel 1 capture and overflow status flags 
 	
     // Check for overflow interrupt
-    if (((which_interrupt & 1 ) == 1)/* && (state == STATE_POST))*/) {
-        Red_LED_Toggle();
-		processEvent(EVENT_POST_COMPLETE);
+    if (((which_interrupt & TIM_SR_UIF) == TIM_SR_UIF)) {
+        processEvent(EVENT_POST_COMPLETE);
+        // Disable capture on channel 1
 		TIM2->CCER &= ~TIM_CCER_CC1E;
-		TIM2->DIER &= ~3;
-		TIM2->CR1 &= ~1;
-        TIM2->SR &= ~1; // Clear overflow interrupt
+        // Disable interrupts for both UIF and channel 1 capture
+		TIM2->DIER &= ~(TIM_DIER_CC1IE | TIM_DIER_UIE);
+        // Disable TIM2
+		TIM2->CR1 &= ~TIM_CR1_CEN;
+        TIM2->SR &= ~TIM_SR_UIF; // Clear overflow interrupt
     }
     
     // Input channel 1 capture interrupt
-    if ((which_interrupt & 2) == 2) {
+    if ((which_interrupt & TIM_SR_CC1IF) == TIM_SR_CC1IF) {
+        // Read the latched time from the capture event
+        // this also clears the capture flag in TIM2->SR
         current_rising_edge_count = TIM2->CCR1;
-        
-			  processEvent(EVENT_RISING_EDGE_DETECT);
-        
-        //last_rising_edge_count = current_rising_edge_count;
-        //Green_LED_Toggle();
-		    
+        processEvent(EVENT_RISING_EDGE_DETECT);
     }
 }
 
@@ -220,17 +219,19 @@ int parseLowerLimit() {
                 // Write a new line after echoing user input
                 n = sprintf((char *)buffer, "\r\n");
                 USART_Write(USART2, buffer, n);
-                return DEFAULT_LOWER_LIMIT;
+                return 0;
             }
             break;
         }
-        // Echo the received character back to the display
-        n = sprintf((char *)buffer, "%c",rx_arr[length]);
-        USART_Write(USART2, buffer, n);
-		// Ascii code for 0-9 is 30 for 0 -> 39 for 9, hence the bottom nibble contains the int 
-		// Therefore mask with 0xF to capture just the bottom nibble
-		rx_arr[length] &= 0xF;
-        length += 1;
+        if ((rx_arr[length] >= 0x30) && (rx_arr[length] <= 0x39)) {
+            // Echo the received character back to the display
+            n = sprintf((char *)buffer, "%c",rx_arr[length]);
+            USART_Write(USART2, buffer, n);
+            // Ascii code for 0-9 is 30 for 0 -> 39 for 9, hence the bottom nibble contains the int 
+            // Therefore mask with 0xF to capture just the bottom nibble
+            rx_arr[length] &= 0xF;
+            length += 1;
+        }
     }
 	for (i = 0; i < length; i++) {
 		value += rx_arr[i] * pow(10,length-i-1);
@@ -251,132 +252,179 @@ int validLowerLimit(int limit) {
 }
 
 int main(void){
-	int		n ;
-    
+	int n;
+    unsigned int wasPost;
+    char rxbyte;
+   
 	System_Clock_Init();
     
     // Enable clk to PortA
-    #warning MOVE oneoff statements into an init function
 	RCC->AHB2ENR |= RCC_AHB2ENR_GPIOAEN;
-    
+
+#if debug
 	LED_Init();
+#endif
+
 	UART2_Init();
     
-  // Configure GPIO Pin
+    // Configure GPIO Pin A0 for alternate function AF1 such that it is routed
+    // to TIM2_CH1
+    
     // Enable the clock to GPIO Ports A	
 	RCC->AHB2ENR |= RCC_AHB2ENR_GPIOAEN;
-    // Set PA1 to be alternate function
-    GPIOA->MODER &= ~3 ;	
-    GPIOA->MODER |= 0x2 ; // Set PA1 to alternate function mode 
-    // Set Alternate function lower register to AF1 so that A1 is set connectted to TIM2_CH2
+    // Set PA0 to be alternate function
+    GPIOA->MODER &= ~GPIO_MODER_MODER0;	    // Clear moder register mode0[1:0]
+    GPIOA->MODER |= GPIO_MODER_MODER0_1;    // Set alternate function mode 10
+    // Set Alternate function lower register to AF1 so that A1 is set connected to TIM2_CH1
     GPIOA->AFR[0] = 0x1;
     
-    // Configure Timer 2 Channel 2 For Input Capture
+    // Configure Timer 2 Channel 1 For Input Capture
 	
     // Enable clock of timer 2
     RCC->APB1ENR1 |= RCC_APB1ENR1_TIM2EN;
     
-    // Enable interrupt for updating timer registers
-    //TIM2->CR1 |= 2;     // Set UDIS bit
-    
-		TIM2->CR1 |= 4;
+    // Only allow an update event (UIF) when an overflow occurs 
+	TIM2->CR1 |= TIM_CR1_URS;
 		
     // Set Prescaler
     // 80 MHz / 80 = 1 MHz -> 1 us
     TIM2->PSC = 79;
     // Configure active input for  Capture/Compare 
-    // Configure CC1 as an input and map IC1 to TI2
+    // Configure CC1 as an input and map IC1 to TI1
     TIM2->CCMR1 &= ~TIM_CCMR1_CC1S;
-    TIM2->CCMR1 |= 0x1; 
-    TIM2->EGR |= 1;
-    // Select the edge of the capture
-    // Enable Capture from the counter
-    TIM2->CCER &= ~0xa; 
+    TIM2->CCMR1 |= TIM_CCMR1_CC1S_0; 
+    #warning THIS ISNT NEEDED??? DONE IN STATE POST
+    TIM2->EGR |= TIM_EGR_UG; // Re-initalize the counter and generate an update of the registers
+    // Select rising edge for capture
+    TIM2->CCER &= ~(TIM_CCER_CC1NP | TIM_CCER_CC1P); 
     
+	// Enable the interrupt handler
+	NVIC_EnableIRQ(TIM2_IRQn);     
 	
-		NVIC_EnableIRQ(TIM2_IRQn);     
-	
-    // Kick of a state machine update event
-  rising_edge_count = 0;
+    // Intialize the state machine
+    rising_edge_count = 0;
 	update_SM = 1;
 	state = STATE_POST;
 	
+    // State Machine Main loop
 	while (1){
+        // Pend on state machine update event which is posted by interrupt handler
+        // update_SM is flag that is set by interrupt handler on state transitions
         if (update_SM == 1) { 
             switch (state) {
                 case (STATE_POST):
                     update_SM = 0;
-                    
-					
-                    //Red_LED_On();
-                    //Green_LED_Off();
+#if debug
+                    Red_LED_On();
+                    Green_LED_Off();
+#endif
                     n = sprintf((char *)buffer, "Running POST!\r\n");
                     USART_Write(USART2, buffer, n);
-                    wasPost = 1;  
-										TIM2->PSC = 3999;
-								    TIM2->ARR = 20000;
-										TIM2->EGR |= 1;
-								    TIM2->DIER |= 3;
-								    TIM2->CCER |= TIM_CCER_CC1E;
-								    TIM2->CR1 |= 1;
+                    wasPost = 1;    // Indicate POST was just run so STATE_PARSE_LIMITS knows if it should print POST PASS status
+                    // Set Prescaler To count at 20 KHz -> 80 MHz / 4000 = 20 kHz -> 50 us
+					TIM2->PSC = 3999;
+                    // Set Auto Reload Register to 2000 to get an overflow interrupt to end POST after 100 ms -> 2000 * 50us = 100 ms
+                    TIM2->ARR = 20000;
+                    TIM2->EGR |= TIM_EGR_UG;
+                    // Unmask TIM2 Interrupts
+                    // UIF - Overflow occurs -> POST over
+                    // Channel 1 Input Capture -> rising edge occurred
+					TIM2->DIER |= (TIM_DIER_CC1IE | TIM_DIER_UIE);
+                    // Enable capture on Channel 1
+					TIM2->CCER |= TIM_CCER_CC1E;
+                    // Enable TIM2 -> Important to do this last otherwise we will get a UIF in the TIM2->SR 
+                    // which we will incorrectly process as an overflow event 
+					TIM2->CR1 |= TIM_CR1_CEN;
+                    
                     break;
                     
                 case (STATE_POST_FAIL_PROMPT):
-                    //Red_LED_Off();
-                    //Green_LED_Off();
+#if debug                    
+                    Red_LED_Off();
+                    Green_LED_Off();
+#endif                    
                     n = sprintf((char *)buffer, "POST Failed\r\n");
                     n += sprintf((char *)buffer+n, "Press ENTER to re-run POST...\r\n");
                     USART_Write(USART2, buffer, n);	
+                    // Wait for the user to enter a carrige return to re-run POST
                     while (USART_Read(USART2) != 0x0d);
                     processEvent(EVENT_RERUN_POST);
                     break;
                     
                 case (STATE_PARSE_LIMITS):
-				
-
-										Green_LED_Off();Red_LED_Off();
-                    //Red_LED_Off();
-                    //Green_LED_On();
+#if debug				
+                    Red_LED_Off();
+                    Green_LED_On();
+#endif
+                    // Only print status of POST if we just ran it 
                     if (wasPost == 1) {
                         n = sprintf((char *)buffer, "Post PASSED!\r\n");
+                        n += sprintf((char *)buffer + n, "%u edges detected.\r\n", rising_edge_count);
                         USART_Write(USART2, buffer, n);	
                     }
-                    n = sprintf((char *)buffer, "%u edges detected.\r\n", rising_edge_count);
-                    // remove?
-					rising_edge_count = 0;
+                    
+                    // Set lower limit to invalid and loop until user enters a valid limit
+					n = sprintf((char *)buffer, "Current lower limit is: %uus\r\n",DEFAULT_LOWER_LIMIT);
+                    n += sprintf((char *)buffer + n, "Current upper limit is: %uus\r\n",DEFAULT_LOWER_LIMIT + 100);
+                    n += sprintf((char *)buffer + n, "Accept? [y/n]: ");
                     USART_Write(USART2, buffer, n);	
-					lower_limit = 0;
-                    while(validLowerLimit(lower_limit) == 0) {
-                        n = sprintf((char *)buffer, "Enter lower limit in range of 50-9950 microseconds and press ENTER: ");
-                        USART_Write(USART2, buffer, n);	
-                        lower_limit = parseLowerLimit();
-                    }
-                    n = sprintf((char *)buffer, "Starting with lower limit %d\r\n", lower_limit);
+                    rxbyte = USART_Read(USART2);
+                    // Echo user char back to terminal
+                    n = sprintf((char *)buffer, "%c\r\n",rxbyte);
+                    USART_Write(USART2, buffer, n);
+                    
+                    // User has selected yes to change the limit
+                    if ((rxbyte == 'Y') || (rxbyte == 'y')) {
+                        lower_limit = 0;    // set limit to invalid to force user to enter 
+                        while(validLowerLimit(lower_limit) == 0) {
+                            n = sprintf((char *)buffer, "Enter lower limit in range of 50-9950 microseconds and press ENTER: ");
+                            USART_Write(USART2, buffer, n);	
+                            lower_limit = parseLowerLimit();
+                        }    
+                    // User wants default lower limit
+                    } else {
+                        lower_limit = DEFAULT_LOWER_LIMIT;
+                    }  
+                    // Output limits to run measurements with
+                    n = sprintf((char *)buffer, "Starting with lower limit %dus\r\n", lower_limit);
+                    n += sprintf((char *)buffer + n, "Starting with upper limit %dus\r\n", lower_limit + 100);
                     USART_Write(USART2, buffer, n);	
                     processEvent(EVENT_START_MEASUREMENTS);
                     break;
                     
                 case (STATE_PERFORM_MEASUREMENTS):
-                    //Red_LED_Off();
-                    //Green_LED_Off();
+#if debug               
+                    Red_LED_Off();
+                    Green_LED_Off();
+#endif                     
                     clearHist();
                     n = sprintf((char *)buffer, "1000 Measurements in progress...\r\n");
                     USART_Write(USART2, buffer, n);	
                     update_SM = 0;
-								    TIM2->ARR = 0xffff;
-								    TIM2->PSC = 79;
-								    TIM2->EGR = 1;
-								    TIM2->DIER = 0x2;//TIM_CCER_CC1E;
-								TIM2->CCER |= TIM_CCER_CC1E;    
-								TIM2->CR1 |= TIM_CR1_CEN;   // Enable CEN bit
+                    // Set UDIS bit to disable UIF flag
+					TIM2->CR1 |= TIM_CR1_UDIS;
+                    // Set the Auto Reload Register back to full scale to avoid overflows
+					TIM2->ARR = 0xffff;
+                    // Set Prescaler to count at 1 MHz -> 80 MHz / 80 = 1 MHz -> 1us
+					TIM2->PSC = 79;
+					TIM2->EGR |= TIM_EGR_UG;
+                    // Enable TIM2_CH1 capture interrupt
+					TIM2->DIER = TIM_DIER_CC1IE;
+                    // Enable capture on channel 1
+                    TIM2->CCER |= TIM_CCER_CC1E;  
+                    // Enable TIM2
+                    TIM2->CR1 |= TIM_CR1_CEN; 
 								    
 								    
                     break;
                     
                 case (STATE_DISPLAY_HIST):
-									  TIM2->DIER &= ~0x2;//TIM_CCER_CC1E;
-                    TIM2->CR1 &= ~TIM_CR1_CEN;   // Enable CEN bit
-								    TIM2->CCER &= ~TIM_CCER_CC1E;
+                    // Disable capture interrupts
+					TIM2->DIER &= ~TIM_DIER_CC1IE;
+                    // Disable TIM2
+                    TIM2->CR1 &= ~TIM_CR1_CEN; 
+                    // Disable channel 1 capture                    
+					TIM2->CCER &= ~TIM_CCER_CC1E;
                     printHist();
                     processEvent(EVENT_HIST_DISP_DONE);
                     wasPost = 0;
@@ -384,10 +432,12 @@ int main(void){
                     
                 case (STATE_FAULT):    
                 default:
-                    //Red_LED_On();
-                    //Green_LED_On();
+#if debug
+                    Red_LED_On();
+                    Green_LED_On();
                     n = sprintf((char *)buffer, "FAULT STATE\r\n");
                     USART_Write(USART2, buffer, n);	
+#endif 
                     update_SM = 0;
                 
             } // end case
