@@ -25,6 +25,8 @@ uint8_t buffer[BufferSize];
 unsigned int rising_edge_count = 0;
 unsigned int update_SM = 0;
 
+
+
 typedef enum {
     STATE_POST,
 	STATE_POST_FAIL_PROMPT,
@@ -34,41 +36,21 @@ typedef enum {
     STATE_FAULT,
 } state_t;
 
-typedef enum {
-    EVENT_POST_COMPLETE,
-    EVENT_RISING_EDGE_DETECT,
-    EVENT_RERUN_POST,
-    EVENT_START_MEASUREMENTS,
-    EVENT_HIST_DISP_DONE,
-    EVENT_MAX_EVENT
-} event_t;
-
 state_t state = STATE_POST;
 
-void processEvent(event_t event) {
-	
-	int index = 0;
-	
-    switch(event) {
-        // 100 ms post time is over
-        case (EVENT_POST_COMPLETE):
-            switch (state) {
-                case(STATE_POST):
-                    if (rising_edge_count == 0) {
+void processPOSTComplete(){
+	if (rising_edge_count == 0) {
                         state = STATE_POST_FAIL_PROMPT;
                     } else {
                         state = STATE_PARSE_LIMITS;
                     }
                     update_SM = 1;
-                    break;
-                default:
-                    update_SM = 1;
-                    state = STATE_FAULT;
-            } // end state
-            break;  // end EVENT_POST_COMPLETE
-        
-        case (EVENT_RISING_EDGE_DETECT):
-            switch (state) {
+}
+	
+void processRisingEdge(){
+	int index;
+	
+	switch (state) {
                 case (STATE_POST):
                     rising_edge_count += 1;
                     break;
@@ -100,54 +82,10 @@ void processEvent(event_t event) {
 					}
 					
                     break;
-                default:
-                    update_SM = 1;
-                    state = STATE_FAULT;
-            } // end state
-            break;  // end EVENT_POST_COMPLETE
-        
-        case (EVENT_RERUN_POST):
-            switch (state) {
-                case(STATE_POST_FAIL_PROMPT):
-                    state = STATE_POST;
-                    update_SM = 1;
-                    break;
-                default:
-                    update_SM = 1;
-                    state = STATE_FAULT;
-            } // end state
-            break; // end EVENT_RERUN_POST
-        
-        case (EVENT_START_MEASUREMENTS):
-            switch (state) {
-                case (STATE_PARSE_LIMITS) :
-                    rising_edge_count = 0;
-                    update_SM = 1;
-                    rising_edge_count = 0;
-                    state = STATE_PERFORM_MEASUREMENTS;
-                    break;
-                default:
-                    update_SM = 1;
-                    state = STATE_FAULT;
-            } // end state
-            break;  // end EVENT_START_MEASUREMENTS
-            
-        case (EVENT_HIST_DISP_DONE):
-            switch(state) {
-                case (STATE_DISPLAY_HIST):
-                    update_SM = 1;
-                    state = STATE_PARSE_LIMITS;
-                    break;
-                default:
-                    update_SM = 1;
-                    state = STATE_FAULT;
-            } // end state
-            break; // end EVENT_HIST_DISP_DONE
-            
-        default:
-            update_SM = 1;
-            state = STATE_FAULT;
-    }
+					default:
+						update_SM = 1;
+					state = STATE_FAULT;
+	}
 }
 
 void TIM2_IRQHandler(void) {
@@ -156,7 +94,8 @@ void TIM2_IRQHandler(void) {
 	
     // Check for overflow interrupt
     if (((which_interrupt & TIM_SR_UIF) == TIM_SR_UIF)) {
-        processEvent(EVENT_POST_COMPLETE);
+        processPOSTComplete();
+				//set 
         // Disable capture on channel 1
 			  timer2DisableInterrupts();
     }
@@ -166,7 +105,7 @@ void TIM2_IRQHandler(void) {
         // Read the latched time from the capture event
         // this also clears the capture flag in TIM2->SR
         current_rising_edge_count = TIM2->CCR1;
-        processEvent(EVENT_RISING_EDGE_DETECT);
+        processRisingEdge();
     }
 }
 
@@ -274,7 +213,8 @@ int main(void){
                     USART_Write(USART2, buffer, n);	
                     // Wait for the user to enter a carrige return to re-run POST
                     while (USART_Read(USART2) != 0x0d);
-                    processEvent(EVENT_RERUN_POST);
+                    state = STATE_POST;
+                    update_SM = 1;
                     break;
                     
                 case (STATE_PARSE_LIMITS):
@@ -315,7 +255,9 @@ int main(void){
                     n = sprintf((char *)buffer, "Starting with lower limit %dus\r\n", lower_limit);
                     n += sprintf((char *)buffer + n, "Starting with upper limit %dus\r\n", lower_limit + 100);
                     USART_Write(USART2, buffer, n);	
-                    processEvent(EVENT_START_MEASUREMENTS);
+                    update_SM = 1;
+                    rising_edge_count = 0;
+                    state = STATE_PERFORM_MEASUREMENTS;
                     break;
                     
                 case (STATE_PERFORM_MEASUREMENTS):
@@ -336,7 +278,8 @@ int main(void){
                 case (STATE_DISPLAY_HIST):
                     timer2DisableInterrupts();
                     printHist(buffer, lower_limit);
-                    processEvent(EVENT_HIST_DISP_DONE);
+                    update_SM = 1;
+                    state = STATE_PARSE_LIMITS;
                     wasPost = 0;
                     break;
                     
