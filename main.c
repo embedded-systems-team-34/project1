@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <math.h>
 
+#include "histogram.h"
+
 #define debug (1)
 #define NUM_BUCKETS (101)
 #define NUM_MEASUREMENTS (1000)
@@ -21,9 +23,6 @@ uint16_t delta_time = 0;
 uint8_t buffer[BufferSize];
 unsigned int rising_edge_count = 0;
 unsigned int update_SM = 0;
-// Initalize this to 1 as when initalizing to 0 and clearing some elements are non-zero
-// Possibly a compiler bug??? Changing optimatization level from -o0 to default elmiinates the issue
-uint16_t pulse_time_hist[NUM_BUCKETS] = {1};
 
 typedef enum {
     STATE_POST,
@@ -87,12 +86,7 @@ void processEvent(event_t event) {
 						// Calculate index into histogram array
 						// If greater than or less than bounds then truncate to the limit
 						index = delta_time - lower_limit;
-						if (index < 0) {
-							index = 0;
-						} else if (index > 100) {
-							index = 100;
-						}
-						pulse_time_hist[index] += 1;
+						addValueToHist(index);
 					} 
 					// If its the last rising edge then kick state machine to display histogram
 					if (rising_edge_count == (NUM_MEASUREMENTS)) {
@@ -181,32 +175,6 @@ void TIM2_IRQHandler(void) {
 }
 
 
-void clearHist() {
-    unsigned int i;
-    for (i = 0; i < NUM_BUCKETS; i++) {
-        pulse_time_hist[i] = 0;
-    }
-}
-
-void printHist() {
-    unsigned int i;
-    int n;
-    unsigned int count = 0;
-    
-	  n = sprintf((char *)buffer, "**********************************\r\n");
-    n += sprintf((char *)buffer+n, "Displaying Histogram: \r\n");
-	  n += sprintf((char *)buffer+n, "**********************************\r\n");
-    USART_Write(USART2, buffer, n);
-    for (i = 0; i < NUM_BUCKETS; i++) {
-        count = pulse_time_hist[i];
-        if (count != 0) {
-            n = sprintf((char *)buffer, "Pulse Duration: %uuS : Count: %u\r\n", lower_limit + i,count);
-            USART_Write(USART2, buffer, n);
-        }
-    }
-		n = sprintf((char *)buffer, "**********************************\r\n");
-    USART_Write(USART2, buffer, n);
-}
 
 int parseLowerLimit() {
     uint8_t rx_arr[10];
@@ -297,7 +265,6 @@ int main(void){
     // Configure CC1 as an input and map IC1 to TI1
     TIM2->CCMR1 &= ~TIM_CCMR1_CC1S;
     TIM2->CCMR1 |= TIM_CCMR1_CC1S_0; 
-    #warning THIS ISNT NEEDED??? DONE IN STATE POST
     //TIM2->EGR |= TIM_EGR_UG; // Re-initalize the counter and generate an update of the registers
     // Select rising edge for capture
     TIM2->CCER &= ~(TIM_CCER_CC1NP | TIM_CCER_CC1P); 
@@ -430,7 +397,7 @@ int main(void){
                     TIM2->CR1 &= ~TIM_CR1_CEN; 
                     // Disable channel 1 capture                    
 					TIM2->CCER &= ~TIM_CCER_CC1E;
-                    printHist();
+                    printHist(buffer, lower_limit);
                     processEvent(EVENT_HIST_DISP_DONE);
                     wasPost = 0;
                     break;
