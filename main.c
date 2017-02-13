@@ -8,9 +8,10 @@
 #include <math.h>
 
 #include "histogram.h"
+#include "timer2.h"
+#include "GPIOA.h"
 
 #define debug (1)
-#define NUM_BUCKETS (101)
 #define NUM_MEASUREMENTS (1000)
 #define MIN_LOWER_LIMIT (50)
 #define MAX_LOWER_LIMIT (9950)
@@ -157,12 +158,7 @@ void TIM2_IRQHandler(void) {
     if (((which_interrupt & TIM_SR_UIF) == TIM_SR_UIF)) {
         processEvent(EVENT_POST_COMPLETE);
         // Disable capture on channel 1
-		TIM2->CCER &= ~TIM_CCER_CC1E;
-        // Disable interrupts for both UIF and channel 1 capture
-		TIM2->DIER &= ~(TIM_DIER_CC1IE | TIM_DIER_UIE);
-        // Disable TIM2
-		TIM2->CR1 &= ~TIM_CR1_CEN;
-        TIM2->SR &= ~TIM_SR_UIF; // Clear overflow interrupt
+			  timer2DisableInterrupts();
     }
     
     // Input channel 1 capture interrupt
@@ -229,45 +225,17 @@ int main(void){
     char rxbyte;
    
 	System_Clock_Init();
-    
-    // Enable clk to PortA
-	RCC->AHB2ENR |= RCC_AHB2ENR_GPIOAEN;
 
 #if debug
 	LED_Init();
 #endif
 
 	UART2_Init();
-    
-    // Configure GPIO Pin A0 for alternate function AF1 such that it is routed
-    // to TIM2_CH1
-    
-    // Enable the clock to GPIO Ports A	
-	RCC->AHB2ENR |= RCC_AHB2ENR_GPIOAEN;
-    // Set PA0 to be alternate function
-    GPIOA->MODER &= ~GPIO_MODER_MODER0;	    // Clear moder register mode0[1:0]
-    GPIOA->MODER |= GPIO_MODER_MODER0_1;    // Set alternate function mode 10
-    // Set Alternate function lower register to AF1 so that A1 is set connected to TIM2_CH1
-    GPIOA->AFR[0] = 0x1;
+    gpioAInit();
     
     // Configure Timer 2 Channel 1 For Input Capture
-	
-    // Enable clock of timer 2
-    RCC->APB1ENR1 |= RCC_APB1ENR1_TIM2EN;
-    
-    // Only allow an update event (UIF) when an overflow occurs 
-	TIM2->CR1 |= TIM_CR1_URS;
-		
-    // Set Prescaler
-    // 80 MHz / 80 = 1 MHz -> 1 us
-    TIM2->PSC = 79;
-    // Configure active input for  Capture/Compare 
-    // Configure CC1 as an input and map IC1 to TI1
-    TIM2->CCMR1 &= ~TIM_CCMR1_CC1S;
-    TIM2->CCMR1 |= TIM_CCMR1_CC1S_0; 
-    //TIM2->EGR |= TIM_EGR_UG; // Re-initalize the counter and generate an update of the registers
-    // Select rising edge for capture
-    TIM2->CCER &= ~(TIM_CCER_CC1NP | TIM_CCER_CC1P); 
+	  timer2InitialConfig();
+     
     
 	// Enable the interrupt handler
 	NVIC_EnableIRQ(TIM2_IRQn);     
@@ -292,20 +260,7 @@ int main(void){
                     n = sprintf((char *)buffer, "Running POST!\r\n");
                     USART_Write(USART2, buffer, n);
                     wasPost = 1;    // Indicate POST was just run so STATE_PARSE_LIMITS knows if it should print POST PASS status
-                    // Set Prescaler To count at 20 KHz -> 80 MHz / 4000 = 20 kHz -> 50 us
-					TIM2->PSC = 3999;
-                    // Set Auto Reload Register to 2000 to get an overflow interrupt to end POST after 100 ms -> 2000 * 50us = 100 ms
-                    TIM2->ARR = 2000;
-                    TIM2->EGR |= TIM_EGR_UG;
-                    // Unmask TIM2 Interrupts
-                    // UIF - Overflow occurs -> POST over
-                    // Channel 1 Input Capture -> rising edge occurred
-					TIM2->DIER |= (TIM_DIER_CC1IE | TIM_DIER_UIE);
-                    // Enable capture on Channel 1
-					TIM2->CCER |= TIM_CCER_CC1E;
-                    // Enable TIM2 -> Important to do this last otherwise we will get a UIF in the TIM2->SR 
-                    // which we will incorrectly process as an overflow event 
-					TIM2->CR1 |= TIM_CR1_CEN;
+                    timer2PostInit();
                     
                     break;
                     
@@ -372,31 +327,14 @@ int main(void){
                     n = sprintf((char *)buffer, "1000 Measurements in progress...\r\n");
                     USART_Write(USART2, buffer, n);	
                     update_SM = 0;
-                    // Set UDIS bit to disable UIF flag
-					//TIM2->CR1 |= TIM_CR1_UDIS;
-                    // Set the Auto Reload Register back to full scale to avoid overflows
-					TIM2->ARR = 0xffff;
-                    // Set Prescaler to count at 1 MHz -> 80 MHz / 80 = 1 MHz -> 1us
-					TIM2->PSC = 79;
-					TIM2->EGR |= TIM_EGR_UG;
-					TIM2->CR1 |= TIM_CR1_UDIS;
-                    // Enable TIM2_CH1 capture interrupt
-					TIM2->DIER = TIM_DIER_CC1IE;
-                    // Enable capture on channel 1
-                    TIM2->CCER |= TIM_CCER_CC1E;  
-                    // Enable TIM2
-                    TIM2->CR1 |= TIM_CR1_CEN; 
+                    
+                    timer2MeasurementInit();
 								    
 								    
                     break;
                     
                 case (STATE_DISPLAY_HIST):
-                    // Disable capture interrupts
-					TIM2->DIER &= ~TIM_DIER_CC1IE;
-                    // Disable TIM2
-                    TIM2->CR1 &= ~TIM_CR1_CEN; 
-                    // Disable channel 1 capture                    
-					TIM2->CCER &= ~TIM_CCER_CC1E;
+                    timer2DisableInterrupts();
                     printHist(buffer, lower_limit);
                     processEvent(EVENT_HIST_DISP_DONE);
                     wasPost = 0;
