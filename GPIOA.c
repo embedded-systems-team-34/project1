@@ -1,11 +1,23 @@
+/******************************************************************************
+* FILENAME : GPIOA.c          
+*
+* DESCRIPTION : 
+*     Code common to the GPIOA port used for the signal generator input
+*
+* AUTHOR: 
+*     Donald MacIntyre - djm4912@rit.edu
+*     Madison Smith    - ms8565@rit.edu  
+*
+******************************************************************************/
 #include "GPIOA.h"
 
+// Initalize A0 as alternate function AF1 to connect A0 to Tim2_Ch1
 void gpioAInit(void) {
 	
-	    // Enable clk to PortA
+	// Enable clk to PortA
 	RCC->AHB2ENR |= RCC_AHB2ENR_GPIOAEN;
 	
-	    // Configure GPIO Pin A0 for alternate function AF1 such that it is routed
+	// Configure GPIO Pin A0 for alternate function AF1 such that it is routed
     // to TIM2_CH1
     
     // Enable the clock to GPIO Ports A	

@@ -1,3 +1,16 @@
+/******************************************************************************
+* FILENAME : main.c          
+*
+* DESCRIPTION : 
+*     Perform 1000 rising edge period measurements and display histogram of results
+*     to the terminal
+*
+* AUTHOR: 
+*     Donald MacIntyre - djm4912@rit.edu
+*     Madison Smith    - ms8565@rit.edu  
+*
+******************************************************************************/
+
 #include "stm32l476xx.h"
 #include "SysClock.h"
 #include "LED.h"
@@ -11,12 +24,15 @@
 #include "timer2.h"
 #include "GPIOA.h"
 
-#define debug (1)
+#define debug (0)
 #define NUM_MEASUREMENTS (1000)
 #define MIN_LOWER_LIMIT (50)
 #define MAX_LOWER_LIMIT (9950)
 #define DEFAULT_LOWER_LIMIT (950)
 
+/******************************************************************************
+* GLOBAL VARIABLES
+******************************************************************************/
 unsigned int lower_limit = 0;
 uint16_t last_rising_edge_count = 0;
 uint16_t current_rising_edge_count = 0;
@@ -24,8 +40,6 @@ uint16_t delta_time = 0;
 uint8_t buffer[BufferSize];
 unsigned int rising_edge_count = 0;
 unsigned int update_SM = 0;
-
-
 
 typedef enum {
     STATE_POST,
@@ -38,66 +52,71 @@ typedef enum {
 
 state_t state = STATE_POST;
 
+// When post complete determine if next state based on number of edges seen during POST
 void processPOSTComplete(){
-	if (rising_edge_count == 0) {
-                        state = STATE_POST_FAIL_PROMPT;
-                    } else {
-                        state = STATE_PARSE_LIMITS;
-                    }
-                    update_SM = 1;
+    if (rising_edge_count == 0) {
+        state = STATE_POST_FAIL_PROMPT;
+    } else {
+        state = STATE_PARSE_LIMITS;
+    }
+    // Force the main loop state machine to update
+    update_SM = 1;
 }
-	
+
+// When a rising edge is detected parse results based current state	
 void processRisingEdge(){
 	int index;
 	
 	switch (state) {
-                case (STATE_POST):
-                    rising_edge_count += 1;
-                    break;
-                case (STATE_PERFORM_MEASUREMENTS):
-					// If not first time, then find delta time
-					if (rising_edge_count != 0) {
-						// If overflow occurred
-						if (current_rising_edge_count < last_rising_edge_count) {
-							// Overflow occurred, delta time = (2^16 - last_rising_edge_count) + current_rising_edge_count
-							delta_time = (0xFFFF - last_rising_edge_count) + current_rising_edge_count; 
-						// No overflow occurred, calculate delta time normally
-						} else {
-							delta_time = current_rising_edge_count - last_rising_edge_count;
-						}
+        case (STATE_POST):
+            rising_edge_count += 1;
+            break;
+        case (STATE_PERFORM_MEASUREMENTS):
+		    // If not first time, then find delta time
+			if (rising_edge_count != 0) {
+                // If overflow occurred
+                if (current_rising_edge_count < last_rising_edge_count) {
+                    // Overflow occurred, delta time = (2^16 - last_rising_edge_count) + current_rising_edge_count
+					delta_time = (0xFFFF - last_rising_edge_count) + current_rising_edge_count; 
+					// No overflow occurred, calculate delta time normally
+				} else {
+                    delta_time = current_rising_edge_count - last_rising_edge_count;
+				}
 						
-						// Calculate index into histogram array
-						// If greater than or less than bounds then truncate to the limit
-						index = delta_time - lower_limit;
-						addValueToHist(index);
-					} 
-					// If its the last rising edge then kick state machine to display histogram
-					if (rising_edge_count == (NUM_MEASUREMENTS)) {
-                        state = STATE_DISPLAY_HIST;
-                        update_SM = 1;
-					// Still have more edges to measure
-                    } else {
-						rising_edge_count += 1;
-						last_rising_edge_count = current_rising_edge_count;
-					}
+				// Calculate index into histogram array
+				// If greater than or less than bounds then truncate to the limit
+				index = delta_time - lower_limit;
+				addValueToHist(index);
+			} 
 					
-                    break;
-					default:
-						update_SM = 1;
-					state = STATE_FAULT;
+            // If its the last rising edge then kick state machine to display histogram
+			if (rising_edge_count == (NUM_MEASUREMENTS)) {
+                state = STATE_DISPLAY_HIST;
+                update_SM = 1;
+				// Still have more edges to measure
+            } else {
+                rising_edge_count += 1;
+				last_rising_edge_count = current_rising_edge_count;
+			}		
+            break;
+		default:
+			update_SM = 1;
+			state = STATE_FAULT;
 	}
 }
 
+/******************************************************************************
+* INTERRUPT HANDLERS
+******************************************************************************/
+
 void TIM2_IRQHandler(void) {
     uint16_t which_interrupt = TIM2->SR;
-    which_interrupt &= 3;   // Only look at the channel 1 capture and overflow status flags 
+    which_interrupt &= (TIM_SR_UIF | TIM_SR_CC1IF);   // Only look at the channel 1 capture and overflow status flags 
 	
     // Check for overflow interrupt
     if (((which_interrupt & TIM_SR_UIF) == TIM_SR_UIF)) {
         processPOSTComplete();
-				//set 
-        // Disable capture on channel 1
-			  timer2DisableInterrupts();
+		timer2DisableInterrupts();
     }
     
     // Input channel 1 capture interrupt
@@ -109,8 +128,7 @@ void TIM2_IRQHandler(void) {
     }
 }
 
-
-
+// Parse the lower limit for custom user input
 int parseLowerLimit() {
     uint8_t rx_arr[10];
     unsigned int value = 0;
@@ -150,6 +168,7 @@ int parseLowerLimit() {
     return value;
 }
 
+// Check if a given lower limit is valid
 int validLowerLimit(int limit) {
     if ((limit >= MIN_LOWER_LIMIT) && (limit <= MAX_LOWER_LIMIT)) {
         return 1;

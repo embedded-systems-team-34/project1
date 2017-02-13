@@ -1,9 +1,21 @@
+/******************************************************************************
+* FILENAME : histogram.c          
+*
+* DESCRIPTION : 
+*     Histogram is used to store edge period data
+*
+* AUTHOR: 
+*     Donald MacIntyre - djm4912@rit.edu
+*     Madison Smith    - ms8565@rit.edu  
+*
+******************************************************************************/
 #include "histogram.h"
 
 // Initalize this to 1 as when initalizing to 0 and clearing some elements are non-zero
 // Possibly a compiler bug??? Changing optimatization level from -o0 to default elmiinates the issue
 uint16_t pulse_time_hist[NUM_BUCKETS] = {1};
 
+// Resets all values stored in the histogram
 void clearHist() {
     unsigned int i;
     for (i = 0; i < NUM_BUCKETS; i++) {
@@ -11,6 +23,7 @@ void clearHist() {
     }
 }
 
+// Print the histogram out to the Serial Port
 void printHist(uint8_t* buffer, int lower_limit) {
     unsigned int i;
     int n;
@@ -31,6 +44,7 @@ void printHist(uint8_t* buffer, int lower_limit) {
     USART_Write(USART2, buffer, n);
 }
 
+// Add a value into the histogram
 void addValueToHist(int index) {
     // If greater than or less than bounds then truncate to the limit
     if (index < 0) {

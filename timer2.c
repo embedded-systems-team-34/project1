@@ -1,3 +1,15 @@
+/******************************************************************************
+* FILENAME : timer2.c          
+*
+* DESCRIPTION : 
+*     Timer 2 code to setup timers for various modes of operation.
+*
+* AUTHOR: 
+*     Donald MacIntyre - djm4912@rit.edu
+*     Madison Smith    - ms8565@rit.edu  
+*
+******************************************************************************/
+
 #include "timer2.h"
 
 // Set up timers after a reset
@@ -21,46 +33,46 @@ void timer2InitialConfig(void) {
 }
 // Set up timers prior to POST
 void timer2PostInit(void) {
-                    // Set Prescaler To count at 20 KHz -> 80 MHz / 4000 = 20 kHz -> 50 us
-					TIM2->PSC = 3999;
-                    // Set Auto Reload Register to 2000 to get an overflow interrupt to end POST after 100 ms -> 2000 * 50us = 100 ms
-                    TIM2->ARR = 2000;
-                    TIM2->EGR |= TIM_EGR_UG;
-                    // Unmask TIM2 Interrupts
-                    // UIF - Overflow occurs -> POST over
-                    // Channel 1 Input Capture -> rising edge occurred
-					TIM2->DIER |= (TIM_DIER_CC1IE | TIM_DIER_UIE);
-                    // Enable capture on Channel 1
-					TIM2->CCER |= TIM_CCER_CC1E;
-                    // Enable TIM2 -> Important to do this last otherwise we will get a UIF in the TIM2->SR 
-                    // which we will incorrectly process as an overflow event 
-					TIM2->CR1 |= TIM_CR1_CEN;	
+    // Set Prescaler To count at 20 KHz -> 80 MHz / 4000 = 20 kHz -> 50 us
+    TIM2->PSC = 3999;
+    // Set Auto Reload Register to 2000 to get an overflow interrupt to end POST after 100 ms -> 2000 * 50us = 100 ms
+    TIM2->ARR = 2000;
+    TIM2->EGR |= TIM_EGR_UG;
+    // Unmask TIM2 Interrupts
+    // UIF - Overflow occurs -> POST over
+    // Channel 1 Input Capture -> rising edge occurred
+    TIM2->DIER |= (TIM_DIER_CC1IE | TIM_DIER_UIE);
+    // Enable capture on Channel 1
+    TIM2->CCER |= TIM_CCER_CC1E;
+    // Enable TIM2 -> Important to do this last otherwise we will get a UIF in the TIM2->SR 
+    // which we will incorrectly process as an overflow event 
+    TIM2->CR1 |= TIM_CR1_CEN;	
 	
 }
 // set up timers prior to Measurements
 void timer2MeasurementInit(void) {
-	                    // Set the Auto Reload Register back to full scale to avoid overflows
-					TIM2->ARR = 0xffff;
-                    // Set Prescaler to count at 1 MHz -> 80 MHz / 80 = 1 MHz -> 1us
-					TIM2->PSC = 79;
-					TIM2->EGR |= TIM_EGR_UG;
-					// Set UDIS bit to disable UIF flag
-					TIM2->CR1 |= TIM_CR1_UDIS;
-                    // Enable TIM2_CH1 capture interrupt
-					TIM2->DIER = TIM_DIER_CC1IE;
-                    // Enable capture on channel 1
-                    TIM2->CCER |= TIM_CCER_CC1E;  
-                    // Enable TIM2
-                    TIM2->CR1 |= TIM_CR1_CEN; 
+    // Set the Auto Reload Register back to full scale to avoid overflows
+    TIM2->ARR = 0xffff;
+    // Set Prescaler to count at 1 MHz -> 80 MHz / 80 = 1 MHz -> 1us
+    TIM2->PSC = 79;
+    TIM2->EGR |= TIM_EGR_UG;
+    // Set UDIS bit to disable UIF flag
+    TIM2->CR1 |= TIM_CR1_UDIS;
+    // Enable TIM2_CH1 capture interrupt
+    TIM2->DIER = TIM_DIER_CC1IE;
+    // Enable capture on channel 1
+    TIM2->CCER |= TIM_CCER_CC1E;  
+    // Enable TIM2
+    TIM2->CR1 |= TIM_CR1_CEN; 
 }
 
 // Disable timer interrupts and capture
 void timer2DisableInterrupts(void) {
-	                    // Disable capture interrupts
-					TIM2->DIER &= ~TIM_DIER_CC1IE;
-                    // Disable TIM2
-                    TIM2->CR1 &= ~TIM_CR1_CEN; 
-                    // Disable channel 1 capture                    
-					TIM2->CCER &= ~TIM_CCER_CC1E;
-	TIM2->SR &= ~TIM_SR_UIF; // Clear overflow interrupt
+    // Disable capture interrupts
+    TIM2->DIER &= ~TIM_DIER_CC1IE;
+    // Disable TIM2
+    TIM2->CR1 &= ~TIM_CR1_CEN; 
+    // Disable channel 1 capture                    
+    TIM2->CCER &= ~TIM_CCER_CC1E;
+    TIM2->SR &= ~TIM_SR_UIF; // Clear overflow interrupt
 }
